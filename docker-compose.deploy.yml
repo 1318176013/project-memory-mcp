@@ -1,5 +1,21 @@
-# Deployment example for the MCP HTTP server only.
-# PostgreSQL (with pgvector) and the embedding API are external services configured by env.
+# Deploy the MCP HTTP server only, for the "native Caddy + standalone Postgres"
+# single-host topology (see docs / deploy notes):
+#
+#   internet --HTTPS--> native Caddy (apt/systemd) --127.0.0.1:8788--> this container
+#                                                                          |
+#                                          docker net project-memory-mcp_default
+#                                                                          v
+#                                                              postgres:5432 (separate stack)
+#
+# Run alongside the existing Postgres stack, under its own compose project name
+# so the two never treat each other's containers as orphans:
+#
+#   docker compose -p project-memory-mcp-app -f docker-compose.deploy.yml up -d --build
+#
+# Required env (/opt/project-memory-mcp/.env): POSTGRES_PASSWORD (shared with the
+# postgres stack), PROJECT_MEMORY_HTTP_TOKEN (must match the token in native
+# Caddyfile), EMBEDDING_API_KEY. Postgres is reached by service name over the
+# external docker network below, so DATABASE_URL is built inline here.
 services:
   project-memory-mcp:
     build:
@@ -8,16 +24,32 @@ services:
     image: project-memory-mcp:local
     restart: unless-stopped
     ports:
-      - "8788:8788"
+      # Bound to loopback only: native Caddy reverse-proxies from the host, so
+      # this port must never be reachable on the public interface.
+      - "127.0.0.1:8788:8788"
     environment:
       PROJECT_MEMORY_HTTP_HOST: "0.0.0.0"
       PROJECT_MEMORY_HTTP_PORT: "8788"
       PROJECT_MEMORY_HTTP_TOKEN: "${PROJECT_MEMORY_HTTP_TOKEN}"
       PROJECT_MEMORY_SERVICE_CONFIG: "/app/examples/project-memory.service.json"
       PROJECT_MEMORY_PROJECT_CONFIG: "/app/examples/project-memory.config.json"
-      DATABASE_URL: "${DATABASE_URL}"
-      EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL}"
+      # Reach Postgres by its compose service-name alias on the shared network.
+      DATABASE_URL: "postgres://${POSTGRES_USER:-project_memory}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-project_memory}"
+      EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL:-https://juliang.pro/proxy/v1}"
       EMBEDDING_MODEL: "${EMBEDDING_MODEL:-text-embedding-3-small}"
       EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS:-1536}"
       EMBEDDING_BATCH_SIZE: "${EMBEDDING_BATCH_SIZE:-64}"
       EMBEDDING_API_KEY: "${EMBEDDING_API_KEY}"
+    deploy:
+      resources:
+        limits:
+          # Small host (1.6 GB): postgres already caps at 512M, keep MCP modest.
+          memory: 256M
+
+# Join the network the standalone Postgres stack already created, so the MCP
+# container resolves `postgres` to that container. `external: true` means compose
+# attaches to it rather than creating/owning it.
+networks:
+  default:
+    name: project-memory-mcp_default
+    external: true
