@@ -4,13 +4,13 @@
 #
 #   docker compose up -d postgres
 #
-# The image is pgvector/pgvector (PostgreSQL 16 + the `vector` extension); the
+# The image is pgvector/pgvector (PostgreSQL 18 + the `vector` extension); the
 # migrations run `CREATE EXTENSION IF NOT EXISTS vector` on first migrate.
 # In production, point the service config at an externally managed Postgres that
 # has pgvector available instead.
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_DB: project_memory
       POSTGRES_USER: project_memory
