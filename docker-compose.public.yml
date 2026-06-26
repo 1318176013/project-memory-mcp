@@ -1,0 +1,99 @@
+# Public single-host deployment: Postgres + MCP + Caddy on one server.
+#
+#   docker compose -f docker-compose.public.yml up -d
+#
+# Topology and trust boundary:
+#
+#   internet --HTTPS(443)--> caddy --(docker net)--> mcp:8788 --> postgres:5432
+#
+#   - postgres and mcp publish NO host ports; they are reachable only on the
+#     internal docker network, never from the public interface.
+#   - caddy is the only service bound to public 80/443. It terminates TLS
+#     (auto Let's Encrypt for $MCP_DOMAIN) and enforces the Bearer token on
+#     every path, including /mcp (which the app leaves unauthenticated).
+#
+# Required env (.env): POSTGRES_PASSWORD, MCP_DOMAIN, MCP_BEARER_TOKEN,
+# EMBEDDING_API_KEY, EMBEDDING_BASE_URL. See .env.example.
+#
+# Open aliyun security-group inbound 80 + 443 from 0.0.0.0/0 for this to work.
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-project_memory}
+      POSTGRES_USER: ${POSTGRES_USER:-project_memory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=128MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "effective_cache_size=512MB"
+      - "-c"
+      - "max_connections=50"
+    volumes:
+      - project-memory-postgres:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-project_memory} -d ${POSTGRES_DB:-project_memory}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: project-memory-mcp:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PROJECT_MEMORY_HTTP_HOST: "0.0.0.0"
+      PROJECT_MEMORY_HTTP_PORT: "8788"
+      # App-level token still set as defence-in-depth for the REST endpoints;
+      # the real gate for /mcp is Caddy in front.
+      PROJECT_MEMORY_HTTP_TOKEN: "${MCP_BEARER_TOKEN}"
+      PROJECT_MEMORY_SERVICE_CONFIG: "/app/examples/project-memory.service.json"
+      PROJECT_MEMORY_PROJECT_CONFIG: "/app/examples/project-memory.config.json"
+      # In-cluster DB address: the compose service name, not ZeroTier/localhost.
+      DATABASE_URL: "postgres://${POSTGRES_USER:-project_memory}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-project_memory}"
+      EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-text-embedding-3-small}"
+      EMBEDDING_DIMENSIONS: "${EMBEDDING_DIMENSIONS:-1536}"
+      EMBEDDING_BATCH_SIZE: "${EMBEDDING_BATCH_SIZE:-64}"
+      EMBEDDING_API_KEY: "${EMBEDDING_API_KEY}"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - mcp
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MCP_DOMAIN: "${MCP_DOMAIN}"
+      MCP_BEARER_TOKEN: "${MCP_BEARER_TOKEN}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  project-memory-postgres:
+  caddy-data:
+  caddy-config:

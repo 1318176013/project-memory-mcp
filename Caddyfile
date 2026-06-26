@@ -1,0 +1,26 @@
+# Reverse proxy + automatic HTTPS for the project-memory-mcp HTTP server.
+#
+# Caddy terminates TLS (auto Let's Encrypt cert for $MCP_DOMAIN) and enforces a
+# Bearer token on EVERY path, including /mcp. This is the security boundary:
+# the MCP server itself leaves /mcp unauthenticated (it is designed for a
+# trusted network), so without this gate anyone could call the MCP tools.
+#
+# Env vars (set in .env / compose):
+#   MCP_DOMAIN        the public hostname, e.g. www.whminde.cn
+#   MCP_BEARER_TOKEN  the shared secret clients must send as
+#                     `Authorization: Bearer <token>`
+{$MCP_DOMAIN} {
+	# `route` runs directives in written order so the 401 reliably fires
+	# before the proxy, regardless of Caddy's default directive ordering.
+	route {
+		# /health stays open for uptime monitoring; it exposes no memory data.
+		@health path /health
+		reverse_proxy @health mcp:8788
+
+		# Reject anything without the exact bearer token, then proxy the rest.
+		@unauthorized not header Authorization "Bearer {$MCP_BEARER_TOKEN}"
+		respond @unauthorized "Unauthorized" 401
+
+		reverse_proxy mcp:8788
+	}
+}
