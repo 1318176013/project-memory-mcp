@@ -90,7 +90,7 @@ export async function buildHelp() {
       files: [
         {
           recommendedPath: "~/.claude/CLAUDE.md",
-          purpose: "Read side: instructs the agent to read .project-memory for the projectId and search_knowledge before tasks that touch existing functionality.",
+          purpose: "Read side: instructs the agent to read .project-memory for the projectId and search_knowledge before any non-trivial task (new features included, not just changes to existing functionality).",
           content: claudeMd
         },
         {

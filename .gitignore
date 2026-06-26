@@ -11,5 +11,8 @@ dist-tests/
 # Claude Code local (per-machine) settings
 .claude/settings.local.json
 
+# Per-project memory marker: holds this deployment's projectId, must not be shared
+.project-memory
+
 # Package-manager noise from accidental npm installs.
 package-lock.json
