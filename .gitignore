@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-tests/
+.env
+*.log
+.DS_Store
+
+# pnpm local content-addressable store
+.pnpm-store/
+
+# Claude Code local (per-machine) settings
+.claude/settings.local.json
+
+# Package-manager noise from accidental npm installs.
+package-lock.json

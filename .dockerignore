@@ -1,0 +1,7 @@
+node_modules
+dist
+dist-tests
+.env
+package-lock.json
+*.log
+.git

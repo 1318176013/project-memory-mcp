@@ -1,0 +1,32 @@
+{
+  "name": "project-memory-mcp",
+  "version": "0.1.0",
+  "description": "Local-first project memory MCP server with PostgreSQL metadata, pgvector vectors, and OpenAI-compatible embeddings.",
+  "type": "module",
+  "packageManager": "pnpm@10.34.1",
+  "bin": {
+    "project-memory": "./dist/cli.js",
+    "project-memory-mcp": "./dist/index.js",
+    "project-memory-http": "./dist/http/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('migrations','dist/migrations',{recursive:true});require('node:fs').cpSync('src/help/templates','dist/help/templates',{recursive:true})\"",
+    "start": "node dist/index.js",
+    "start:http": "node dist/http/server.js",
+    "migrate": "node dist/cli.js migrate",
+    "search": "node dist/cli.js search",
+    "test": "tsc -p tsconfig.test.json && node -e \"require('node:fs').cpSync('migrations','dist-tests/migrations',{recursive:true})\" && node --test dist-tests/tests/config.test.js dist-tests/tests/db.test.js dist-tests/tests/confidence.test.js dist-tests/tests/retriever.test.js dist-tests/tests/embeddings.test.js dist-tests/tests/integration.db.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.21.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.7",
+    "pg": "^8.13.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.2"
+  }
+}

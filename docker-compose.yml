@@ -1,0 +1,24 @@
+# Optional local development dependency.
+# The MCP server does not start or manage this service; run this file manually when
+# you want a disposable local PostgreSQL with pgvector:
+#
+#   docker compose up -d postgres
+#
+# The image is pgvector/pgvector (PostgreSQL 16 + the `vector` extension); the
+# migrations run `CREATE EXTENSION IF NOT EXISTS vector` on first migrate.
+# In production, point the service config at an externally managed Postgres that
+# has pgvector available instead.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: project_memory
+      POSTGRES_USER: project_memory
+      POSTGRES_PASSWORD: project_memory
+    ports:
+      - "5432:5432"
+    volumes:
+      - project-memory-postgres:/var/lib/postgresql/data
+
+volumes:
+  project-memory-postgres:

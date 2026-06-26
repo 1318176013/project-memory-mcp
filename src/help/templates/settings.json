@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\Administrator\\.claude\\hooks\\memory-sink.cjs\""
+          }
+        ]
+      }
+    ]
+  }
+}

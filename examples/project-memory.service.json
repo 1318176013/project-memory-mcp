@@ -1,0 +1,13 @@
+{
+  "database": {
+    "urlEnv": "DATABASE_URL"
+  },
+  "embedding": {
+    "provider": "openai-compatible",
+    "baseUrl": "https://juliang.pro/proxy/v1",
+    "apiKeyEnv": "EMBEDDING_API_KEY",
+    "model": "text-embedding-3-small",
+    "dimensions": 1536,
+    "batchSize": 64
+  }
+}
