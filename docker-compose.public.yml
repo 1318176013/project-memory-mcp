@@ -37,7 +37,10 @@ services:
       - "-c"
       - "max_connections=50"
     volumes:
-      - project-memory-postgres:/var/lib/postgresql/data
+      # PG18+ images store data under a version-specific subdir and want the
+      # volume mounted at /var/lib/postgresql (not .../data); the old .../data
+      # path trips the image's startup self-check and crash-loops.
+      - project-memory-postgres:/var/lib/postgresql
     # Optional: expose Postgres for direct DB clients (psql/DBeaver) WITHOUT
     # putting it on the public internet. Defaults to 127.0.0.1 (no remote
     # access). Set PG_BIND_IP to the server's ZeroTier IP (e.g. 192.168.194.1)

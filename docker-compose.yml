@@ -41,7 +41,10 @@ services:
       # Bind only to PG_BIND_IP (ZeroTier IP in production); never 0.0.0.0.
       - "${PG_BIND_IP:-127.0.0.1}:5432:5432"
     volumes:
-      - project-memory-postgres:/var/lib/postgresql/data
+      # PG18+ images store data under a version-specific subdir and want the
+      # volume mounted at /var/lib/postgresql (not .../data); mounting the old
+      # .../data path trips the image's startup self-check and crash-loops.
+      - project-memory-postgres:/var/lib/postgresql
     deploy:
       resources:
         limits:
