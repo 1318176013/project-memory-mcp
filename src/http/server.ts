@@ -16,6 +16,15 @@ import { listFeedback, listSuspectConfidence } from "../confidence/confidence-ma
 const config = await loadRuntimeConfig();
 const projects = await loadProjectConfigs();
 const app = createApp(config);
+logger.info("HTTP app config loaded", {
+  projectId: config.project.projectId,
+  projectCount: projects.length,
+  embeddingProvider: config.service.embedding.provider,
+  embeddingBaseUrl: config.service.embedding.baseUrl,
+  embeddingModel: config.service.embedding.model,
+  embeddingDimensions: config.service.embedding.dimensions,
+  embeddingBatchSize: config.service.embedding.batchSize
+});
 // Converge the schema once before accepting connections. Migrations are
 // idempotent, so this is safe on every boot; request handlers no longer migrate
 // per call.
@@ -26,9 +35,24 @@ const token = process.env.PROJECT_MEMORY_HTTP_TOKEN;
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
 const server = http.createServer(async (request, response) => {
+  const startedAt = Date.now();
+  response.on("finish", () => {
+    logger.info("HTTP request completed", {
+      method: request.method,
+      path: request.url?.split("?")[0] ?? "/",
+      statusCode: response.statusCode,
+      elapsedMs: Date.now() - startedAt
+    });
+  });
   try {
     await route(request, response);
   } catch (error) {
+    logger.error("HTTP request failed", {
+      method: request.method,
+      path: request.url?.split("?")[0] ?? "/",
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error)
+    });
     json(response, 500, { error: error instanceof Error ? error.message : String(error) });
   }
 });

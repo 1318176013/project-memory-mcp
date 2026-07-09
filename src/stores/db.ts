@@ -15,8 +15,15 @@ export class Database {
   readonly pool: Pool;
 
   constructor(config: ServiceConfig) {
+    const databaseUrl = getDatabaseUrl(config);
+    logger.info("PostgreSQL pool initializing", {
+      target: describeDatabaseUrl(databaseUrl),
+      max: config.database.pool?.max,
+      idleTimeoutMillis: config.database.pool?.idleTimeoutMillis,
+      connectionTimeoutMillis: config.database.pool?.connectionTimeoutMillis
+    });
     this.pool = new Pool({
-      connectionString: getDatabaseUrl(config),
+      connectionString: databaseUrl,
       max: config.database.pool?.max,
       idleTimeoutMillis: config.database.pool?.idleTimeoutMillis,
       connectionTimeoutMillis: config.database.pool?.connectionTimeoutMillis
@@ -35,10 +42,14 @@ export class Database {
     // re-running the full set on an already-migrated DB is safe.
     const dir = await readdir(migrationsDir);
     const files = dir.filter((file) => file.endsWith(".sql")).sort();
+    logger.info("Database migrations started", { migrationsDir, count: files.length });
     for (const file of files) {
+      const startedAt = Date.now();
       const migration = await readFile(path.resolve(migrationsDir, file), "utf8");
       await this.pool.query(migration);
+      logger.info("Database migration applied", { file, elapsedMs: Date.now() - startedAt });
     }
+    logger.info("Database migrations completed", { count: files.length });
   }
 
   async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -58,5 +69,14 @@ export class Database {
 
   async close(): Promise<void> {
     await this.pool.end();
+  }
+}
+
+function describeDatabaseUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}${url.pathname}`;
+  } catch {
+    return "<unparseable database url>";
   }
 }

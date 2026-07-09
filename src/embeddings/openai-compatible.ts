@@ -1,6 +1,7 @@
 import type { ServiceConfig } from "../config/types.js";
 import { getRequiredEnv } from "../config/loader.js";
 import type { EmbeddingInput, EmbeddingProvider, EmbeddingResult } from "./provider.js";
+import { logger } from "../utils/logger.js";
 
 type EmbeddingResponse = {
   data: Array<{ embedding: number[]; index: number }>;
@@ -36,13 +37,22 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
 
   private async embedBatchOnce(inputs: EmbeddingInput[]): Promise<EmbeddingResult[]> {
     if (inputs.length === 0) return [];
+    const startedAt = Date.now();
+    const url = `${this.config.baseUrl.replace(/\/$/, "")}/embeddings`;
+    logger.info("Embedding request started", {
+      url,
+      model: this.config.model,
+      expectedDimensions: this.config.dimensions,
+      inputCount: inputs.length,
+      timeoutMs: this.requestTimeoutMs
+    });
 
     // Bound the request so a hung embedding API cannot block add/update/search
     // indefinitely. AbortSignal.timeout fires an AbortError after the deadline;
     // surface it as a clear, actionable message.
     let response: Response;
     try {
-      response = await fetch(`${this.config.baseUrl.replace(/\/$/, "")}/embeddings`, {
+      response = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -55,6 +65,12 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
         signal: AbortSignal.timeout(this.requestTimeoutMs)
       });
     } catch (error) {
+      logger.error("Embedding request failed before response", {
+        url,
+        model: this.config.model,
+        elapsedMs: Date.now() - startedAt,
+        error: errorMessage(error)
+      });
       if (error instanceof Error && error.name === "TimeoutError") {
         throw new Error(`Embedding API timed out after ${this.requestTimeoutMs}ms`);
       }
@@ -63,13 +79,26 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
 
     if (!response.ok) {
       const text = await response.text();
+      logger.error("Embedding API returned non-ok response", {
+        url,
+        model: this.config.model,
+        status: response.status,
+        elapsedMs: Date.now() - startedAt,
+        bodyPreview: text.slice(0, 500)
+      });
       throw new Error(`Embedding API failed with ${response.status}: ${text}`);
     }
 
     const payload = (await response.json()) as EmbeddingResponse;
     const byIndex = [...payload.data].sort((a, b) => a.index - b.index);
-    return byIndex.map((item) => {
+    const results = byIndex.map((item) => {
       if (item.embedding.length !== this.config.dimensions) {
+        logger.error("Embedding dimensions mismatch", {
+          model: payload.model ?? this.config.model,
+          expectedDimensions: this.config.dimensions,
+          actualDimensions: item.embedding.length,
+          elapsedMs: Date.now() - startedAt
+        });
         throw new Error(
           `Embedding dimensions mismatch: expected ${this.config.dimensions}, got ${item.embedding.length}`
         );
@@ -81,5 +110,17 @@ export class OpenAICompatibleEmbeddingProvider implements EmbeddingProvider {
         dimensions: item.embedding.length
       };
     });
+    logger.info("Embedding request completed", {
+      url,
+      model: payload.model ?? this.config.model,
+      inputCount: inputs.length,
+      dimensions: results[0]?.dimensions,
+      elapsedMs: Date.now() - startedAt
+    });
+    return results;
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

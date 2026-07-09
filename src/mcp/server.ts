@@ -9,6 +9,7 @@ import { registerProject } from "../stores/project-store.js";
 import { healthCheck } from "../health/check.js";
 import { listFeedback, listSuspectConfidence, readConfidence, submitConfidenceFeedback } from "../confidence/confidence-manager.js";
 import { buildHelp } from "../help/help.js";
+import { logger } from "../utils/logger.js";
 
 const confidenceSignalSchema = z.enum(["support", "confirm", "dispute", "contradict", "obsolete", "uncertain"]);
 
@@ -26,7 +27,7 @@ export function createMcpServer(app: AppContext): McpServer {
         "Start here. Returns a guide for using this server: which tool to call first, the call order and arguments, how projectId works, and the scaffold (files + contents) to wire a project into the auto-memory workflow. Takes no arguments.",
       inputSchema: {}
     },
-    async () => jsonResult(await buildHelp())
+    async () => runTool("help", {}, async () => jsonResult(await buildHelp()))
   );
 
   server.registerTool(
@@ -45,7 +46,7 @@ export function createMcpServer(app: AppContext): McpServer {
       }
     },
     async ({ projectId, targetId, signal, weight, agentId, rationale, evidence }) =>
-      jsonResult(
+      runTool("record_confidence_feedback", { projectId, targetId, signal }, async () => jsonResult(
         await submitConfidenceFeedback({
           ...app,
           projectId,
@@ -56,7 +57,7 @@ export function createMcpServer(app: AppContext): McpServer {
           rationale,
           evidence
         })
-      )
+      ))
   );
 
   server.registerTool(
@@ -69,7 +70,10 @@ export function createMcpServer(app: AppContext): McpServer {
         targetId: z.string()
       }
     },
-    async ({ projectId, targetId }) => jsonResult(await readConfidence({ ...app, projectId, targetId }))
+    async ({ projectId, targetId }) =>
+      runTool("get_confidence", { projectId, targetId }, async () =>
+        jsonResult(await readConfidence({ ...app, projectId, targetId }))
+      )
   );
 
   server.registerTool(
@@ -83,7 +87,10 @@ export function createMcpServer(app: AppContext): McpServer {
         limit: z.number().int().positive().optional()
       }
     },
-    async ({ projectId, targetId, limit }) => jsonResult(await listFeedback({ ...app, projectId, targetId, limit }))
+    async ({ projectId, targetId, limit }) =>
+      runTool("list_confidence_feedback", { projectId, targetId, limit }, async () =>
+        jsonResult(await listFeedback({ ...app, projectId, targetId, limit }))
+      )
   );
 
   server.registerTool(
@@ -95,7 +102,10 @@ export function createMcpServer(app: AppContext): McpServer {
         projectId: z.string()
       }
     },
-    async ({ projectId }) => jsonResult(await listSuspectConfidence({ ...app, projectId }))
+    async ({ projectId }) =>
+      runTool("list_suspect_confidence", { projectId }, async () =>
+        jsonResult(await listSuspectConfidence({ ...app, projectId }))
+      )
   );
 
   server.registerTool(
@@ -105,7 +115,7 @@ export function createMcpServer(app: AppContext): McpServer {
       description: "Check PostgreSQL and embedding API connectivity.",
       inputSchema: {}
     },
-    async () => jsonResult(await healthCheck(app))
+    async () => runTool("health_check", {}, async () => jsonResult(await healthCheck(app)))
   );
 
   server.registerTool(
@@ -117,7 +127,10 @@ export function createMcpServer(app: AppContext): McpServer {
         name: z.string().optional()
       }
     },
-    async ({ name }) => jsonResult(await registerProject(app.db.pool, { name }))
+    async ({ name }) =>
+      runTool("register_project", { hasName: name !== undefined }, async () =>
+        jsonResult(await registerProject(app.db.pool, { name }))
+      )
   );
 
   server.registerTool(
@@ -131,7 +144,10 @@ export function createMcpServer(app: AppContext): McpServer {
         topK: z.number().int().positive().optional()
       }
     },
-    async ({ projectId, query, topK }) => jsonResult(await searchKnowledge({ ...app, projectId, query, topK }))
+    async ({ projectId, query, topK }) =>
+      runTool("search_knowledge", { projectId, topK, queryLength: query.length }, async () =>
+        jsonResult(await searchKnowledge({ ...app, projectId, query, topK }))
+      )
   );
 
   server.registerTool(
@@ -150,7 +166,17 @@ export function createMcpServer(app: AppContext): McpServer {
       }
     },
     async ({ projectId, title, content, kind, tags, source, allowDuplicate }) =>
-      jsonResult(await addMemory({ ...app, projectId, title, content, kind, tags, source, allowDuplicate }))
+      runTool("add_memory", {
+        projectId,
+        kind,
+        tagCount: tags?.length ?? 0,
+        hasSource: source !== undefined,
+        allowDuplicate: allowDuplicate === true,
+        titleLength: title.length,
+        contentLength: content.length
+      }, async () =>
+        jsonResult(await addMemory({ ...app, projectId, title, content, kind, tags, source, allowDuplicate }))
+      )
   );
 
   server.registerTool(
@@ -167,7 +193,9 @@ export function createMcpServer(app: AppContext): McpServer {
       }
     },
     async ({ projectId, includeArchived, kind, tag, limit }) =>
-      jsonResult(await listMemories({ ...app, projectId, includeArchived, kind, tag, limit }))
+      runTool("list_memories", { projectId, includeArchived, kind, tag, limit }, async () =>
+        jsonResult(await listMemories({ ...app, projectId, includeArchived, kind, tag, limit }))
+      )
   );
 
   server.registerTool(
@@ -186,7 +214,17 @@ export function createMcpServer(app: AppContext): McpServer {
       }
     },
     async ({ projectId, id, title, content, kind, tags, source }) =>
-      jsonResult(await updateMemory({ ...app, projectId, id, title, content, kind, tags, source }))
+      runTool("update_memory", {
+        projectId,
+        id,
+        hasTitle: title !== undefined,
+        hasContent: content !== undefined,
+        hasKind: kind !== undefined,
+        hasTags: tags !== undefined,
+        hasSource: source !== undefined
+      }, async () =>
+        jsonResult(await updateMemory({ ...app, projectId, id, title, content, kind, tags, source }))
+      )
   );
 
   server.registerTool(
@@ -199,7 +237,10 @@ export function createMcpServer(app: AppContext): McpServer {
         id: z.string()
       }
     },
-    async ({ projectId, id }) => jsonResult(await archiveMemory({ ...app, projectId, id }))
+    async ({ projectId, id }) =>
+      runTool("archive_memory", { projectId, id }, async () =>
+        jsonResult(await archiveMemory({ ...app, projectId, id }))
+      )
   );
 
   return server;
@@ -221,4 +262,21 @@ function jsonResult(value: unknown) {
     content: [{ type: "text" as const, text }],
     structuredContent
   };
+}
+
+async function runTool<T>(name: string, data: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  logger.info("MCP tool started", { name, ...data });
+  try {
+    const result = await fn();
+    logger.info("MCP tool completed", { name, elapsedMs: Date.now() - startedAt });
+    return result;
+  } catch (error) {
+    logger.error("MCP tool failed", {
+      name,
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  }
 }

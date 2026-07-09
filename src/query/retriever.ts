@@ -2,6 +2,7 @@ import type { RuntimeConfig } from "../config/types.js";
 import type { Database } from "../stores/db.js";
 import { searchMemoriesByVector, type StoredMemory } from "../stores/memory-store.js";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
+import { logger } from "../utils/logger.js";
 
 export type SearchKnowledgeResult = {
   query: string;
@@ -19,15 +20,33 @@ export async function searchKnowledge(input: {
   projectId: string;
   topK?: number;
 }): Promise<SearchKnowledgeResult> {
+  logger.info("Search knowledge started", {
+    projectId: input.projectId,
+    topK: input.topK ?? 8,
+    queryLength: input.query.length
+  });
+
+  const embeddingStartedAt = Date.now();
   const embedding = await input.embeddingProvider.embed({ text: input.query });
+  logger.info("Search knowledge embedding completed", {
+    projectId: input.projectId,
+    dimensions: embedding.dimensions,
+    elapsedMs: Date.now() - embeddingStartedAt
+  });
 
   // Exact cosine KNN in Postgres, already scoped to this project and to active
   // (non-archived) rows with an embedding. Each row carries its cosine
   // similarity as `score`, which rankMemories then weights by confidence.
+  const searchStartedAt = Date.now();
   const candidates = await searchMemoriesByVector(input.db.pool, {
     projectId: input.projectId,
     embedding: embedding.vector,
     limit: input.topK ?? 8
+  });
+  logger.info("Search knowledge vector query completed", {
+    projectId: input.projectId,
+    candidateCount: candidates.length,
+    elapsedMs: Date.now() - searchStartedAt
   });
 
   const rawScores = new Map<string, number>(candidates.map((memory) => [memory.id, memory.score ?? 0]));
@@ -43,6 +62,11 @@ export async function searchKnowledge(input: {
   if (sortedMemories.length === 0 && !registered) {
     result.warning = `projectId "${input.projectId}" is not registered and has no indexed data. Call register_project first or check the projectId.`;
   }
+  logger.info("Search knowledge completed", {
+    projectId: input.projectId,
+    resultCount: sortedMemories.length,
+    registered
+  });
   return result;
 }
 
